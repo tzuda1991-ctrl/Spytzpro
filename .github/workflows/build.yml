@@ -21,14 +21,17 @@ jobs:
           java-version: '17'
 
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        # Ye step ab kaam karega agar gradlew file commit ki hai
+        run: chmod +x ./gradlew
 
-      - name: Build with Gradle
+      - name: Build Debug APK
+        # './' lagana zaroori hai taaki shell samjhe ye current directory ka file hai
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK Artifact
-        # YE LINE CHANGE KI HAI: v3 ki jagah v4 use hua hai
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          # Path check karo ki APK actually yahi ban rha hai ya nahi
+          # Usually path 'app/build/outputs/apk/debug/' hota hai
+          path: app/build/outputs/apk/debug/*.apk
