@@ -49,7 +49,8 @@ dependencies {
     implementation 'androidx.camera:camera-view:1.3.0'
     
     // --- FIX ADDED HERE ---
-    // OkHttp dependency required for MultipartBody.Builder and addFormDataProperty
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    // OkHttp dependency required for MultipartBody and MediaType parsing
+    implementation platform('com.squareup.okhttp3:okhttp-bom:4.12.0')
+    implementation 'com.squareup.okhttp3:okhttp'
     implementation 'com.squareup.okio:okio:3.6.0'
 }
