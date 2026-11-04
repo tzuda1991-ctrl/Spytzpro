@@ -9,9 +9,10 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import okhttp3.*
-import okio.IOException
+import okio.IOException // Ensure this import is present for Kotlin's Okio IOException if needed, but usually java.io.IOException is used with Callback
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException as JavaIOException // Alias to avoid conflict if needed
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -21,23 +22,19 @@ class TelegramBotHelper(private val context: Context) {
         private const val BASE_URL = "https://api.telegram.org"
     }
 
-    private var mediaRecorder: MediaRecorder? = null
-    private var outputFile: File? = null
-    private var cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private var imageCapture: ImageCapture? = null
-    private var cameraProviderFuture: ProcessCameraProvider? = null
-
     fun sendPhotoToBot(botToken: String, chatId: String, filePath: String, caption: String = "") {
         val file = File(filePath)
         if (!file.exists()) return
 
         val client = OkHttpClient()
+        
+        // Use addFormDataPart for files
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("chat_id", chatId)
+            .addFormDataPart("caption", caption)
             .addFormDataPart("photo", file.name, 
                 RequestBody.create(MediaType.parse("image/jpeg"), file))
-            .addFormDataProperty("caption", caption)
             .build()
 
         val request = Request.Builder()
@@ -46,12 +43,17 @@ class TelegramBotHelper(private val context: Context) {
             .build()
 
         client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
+            override fun onFailure(call: Call, e: java.io.IOException) {
                 Log.e(TAG, "Photo upload failed", e)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                Log.d(TAG, "Photo uploaded successfully")
+                if (response.isSuccessful) {
+                    Log.d(TAG, "Photo uploaded successfully")
+                } else {
+                    Log.e(TAG, "Error: ${response.code} ${response.message}")
+                }
+                response.close()
             }
         })
     }
@@ -61,9 +63,11 @@ class TelegramBotHelper(private val context: Context) {
         if (!file.exists()) return
 
         val client = OkHttpClient()
+        
+        // Use addFormDataPart for files
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataProperty("chat_id", chatId)
+            .addFormDataPart("chat_id", chatId)
             .addFormDataPart("video", file.name, 
                 RequestBody.create(MediaType.parse("video/mp4"), file))
             .build()
@@ -79,7 +83,12 @@ class TelegramBotHelper(private val context: Context) {
             }
 
             override fun onResponse(call: Call, response: Response) {
-                Log.d(TAG, "Video uploaded successfully")
+                if (response.isSuccessful) {
+                    Log.d(TAG, "Video uploaded successfully")
+                } else {
+                    Log.e(TAG, "Error: ${response.code} ${response.message}")
+                }
+                response.close()
             }
         })
     }
@@ -89,11 +98,13 @@ class TelegramBotHelper(private val context: Context) {
         if (!file.exists()) return
 
         val client = OkHttpClient()
+        
+        // Use addFormDataPart for files
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataProperty("chat_id", chatId)
-            .addFormDataProperty("voice", file.name, 
-                RequestBody.create(MediaType.parse("audio/ogg"), file)) // Or audio/mpeg
+            .addFormDataPart("chat_id", chatId)
+            .addFormDataPart("voice", file.name, 
+                RequestBody.create(MediaType.parse("audio/ogg"), file))
             .build()
 
         val request = Request.Builder()
@@ -107,60 +118,13 @@ class TelegramBotHelper(private val context: Context) {
             }
 
             override fun onResponse(call: Call, response: Response) {
-                Log.d(TAG, "Audio uploaded successfully")
+                if (response.isSuccessful) {
+                    Log.d(TAG, "Audio uploaded successfully")
+                } else {
+                    Log.e(TAG, "Error: ${response.code} ${response.message}")
+                }
+                response.close()
             }
         })
-    }
-
-    // --- Recording Logic ---
-
-    fun startRecording(isVideo: Boolean, isFrontCamera: Boolean = false) {
-        mediaRecorder = MediaRecorder()
-        mediaRecorder?.let {
-            if (isVideo) {
-                it.setVideoSource(MediaRecorder.VideoSource.SURFACE) // Requires SurfaceTexture usually
-                it.setAudioSource(MediaRecorder.AudioSource.MIC)
-                it.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                it.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-                it.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
-            } else {
-                it.setAudioSource(MediaRecorder.AudioSource.MIC)
-                it.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
-                it.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
-            }
-
-            val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-            val type = if (isVideo) "video" else "audio"
-            outputFile = File(context.getExternalFilesDir(null), "$type_$timeStamp.${if(isVideo) "mp4" else "3gp"}")
-            
-            it.setOutputFile(outputFile?.absolutePath)
-            
-            try {
-                it.prepare()
-                it.start()
-                Log.d(TAG, "Recording started: $outputFile")
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    fun stopRecording(): File? {
-        try {
-            mediaRecorder?.stop()
-            mediaRecorder?.reset()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return outputFile
-    }
-
-    fun takePhoto(isFrontCamera: Boolean): String? {
-        // Note: Actual capture logic requires Activity Lifecycle owner passed from outside
-        // For this helper, we just prepare the path. The actual capture happens in NotificationService or Activity
-        val outputDirectory = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-        val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-        val fileName = "photo_${if(isFrontCamera) "front" else "back"}_$timeStamp.jpg"
-        return File(outputDirectory, fileName).absolutePath
     }
 }
