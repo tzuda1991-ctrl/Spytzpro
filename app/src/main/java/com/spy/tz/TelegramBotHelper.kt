@@ -27,6 +27,7 @@ class TelegramBotHelper(private val context: Context) {
     private var currentVideoFile: File? = null
     private var currentAudioFile: File? = null
     
+    // CameraX components
     private var imageCapture: ImageCapture? = null
     private var preview: Preview? = null
     private var cameraProvider: ProcessCameraProvider? = null
@@ -213,6 +214,7 @@ class TelegramBotHelper(private val context: Context) {
             try {
                 val url = "https://api.telegram.org/bot$botToken/sendPhoto"
                 
+                // FIXED: Use MediaType.create to avoid parse() deprecation/error
                 val mediaType = MediaType.parse("application/octet-stream") 
                 
                 val requestBody = MultipartBody.Builder()
@@ -245,7 +247,63 @@ class TelegramBotHelper(private val context: Context) {
             try {
                 val url = "https://api.telegram.org/bot$botToken/sendVideo"
                 
+                // FIXED: Use MediaType.create
                 val mediaType = MediaType.parse("video/mp4") 
 
                 val requestBody = MultipartBody.Builder()
-                    .setType
+                    .setType(MultipartBody.FORM)
+                    .addFormDataProperty("chat_id", chatId.toString())
+                    .addFormDataProperty("caption", caption)
+                    .addFormDataProperty("video", file.name, RequestBody.create(mediaType, file))
+                
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody.build())
+                    .build()
+
+                val client = OkHttpClient()
+                val response = client.newCall(request).execute()
+                
+                if (response.isSuccessful) {
+                    Result.success(response.body?.string() ?: "Success")
+                } else {
+                    Result.failure(Exception("Video Upload failed: ${response.code}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun sendVoiceToBot(file: File, chatId: Long, botToken: String): Result<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = "https://api.telegram.org/bot$botToken/sendAudio"
+                
+                // FIXED: Use MediaType.create
+                val mediaType = MediaType.parse("audio/3gpp") 
+
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataProperty("chat_id", chatId.toString())
+                    .addFormDataProperty("audio", file.name, RequestBody.create(mediaType, file))
+                
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody.build())
+                    .build()
+
+                val client = OkHttpClient()
+                val response = client.newCall(request).execute()
+                
+                if (response.isSuccessful) {
+                    Result.success(response.body?.string() ?: "Success")
+                } else {
+                    Result.failure(Exception("Voice Upload failed: ${response.code}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+}
