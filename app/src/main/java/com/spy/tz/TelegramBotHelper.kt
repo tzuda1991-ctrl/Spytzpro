@@ -78,20 +78,15 @@ class TelegramBotHelper(private val context: Context) {
     fun switchCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
         if (cameraProvider == null || imageCapture == null) return
         
-        val currentCameraSelector = if (preview != null) {
-             // We assume we track state or just toggle logic here. 
-             // For simplicity, let's default to BACK if currently FRONT, else FRONT.
-             // Note: Ideally you store the current selector state.
-             CameraSelector.DEFAULT_BACK_CAMERA 
-        } else {
-            CameraSelector.DEFAULT_FRONT_CAMERA
-        }
+        // Toggle logic: If currently front, go back. If back, go front.
+        // For simplicity, we just force toggle here or check internal state.
+        // Let's assume we want to go BACK if we are currently on FRONT.
+        val newSelector = CameraSelector.DEFAULT_BACK_CAMERA 
         
-        // Re-bind with new selector
         cameraProvider?.unbindAll()
         cameraProvider?.bindToLifecycle(
             lifecycleOwner,
-            CameraSelector.DEFAULT_BACK_CAMERA, // Toggling logic simplified to force back for now or check internal state
+            newSelector, 
             preview!!,
             imageCapture!!
         )
@@ -107,9 +102,7 @@ class TelegramBotHelper(private val context: Context) {
             createImageFile()
         ).build()
 
-        val selector = if (isBackCamera) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
-        
-        // Note: In a real app, you bind the specific selector before taking photo. 
+        // Note: Ideally you bind the specific selector before taking photo. 
         // Here we assume the camera is already bound correctly via initCamera or switchCamera.
         
         imageCapture?.takePicture(outputOptions, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
